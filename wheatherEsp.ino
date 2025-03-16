@@ -45,6 +45,8 @@ unsigned long previousMillis = 0;  // will store the last time when the readings
 // Updates readings every 10 seconds
 const long interval = 10000;
 
+String createJson();
+
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
 <head>
@@ -68,23 +70,23 @@ const char index_html[] PROGMEM = R"rawliteral(
   </style>
 </head>
 <body>
-  <h2>Wheather station</h2>
+  <h2>Weather station</h2>
   <p>
     <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
     <span class="dht-labels">In</span> 
-    <span id="temperature">%TEMPERATURE%</span>
+    <span id="temperaturein">%TEMPERATUREIN%</span>
     <sup class="units">&deg;C</sup>
   </p>
   <p>
     <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
     <span class="dht-labels">Out</span> 
-    <span id="temperatureds">%TEMPERATUREDS%</span>
+    <span id="temperatureout">%TEMPERATUREOUT%</span>
     <sup class="units">&deg;C</sup>
   </p>
   <p>
     <i class="fas fa-tint" style="color:#00add6;"></i> 
     <span class="dht-labels">In</span>
-    <span id="humidity">%HUMIDITY%</span>
+    <span id="humidityin">%HUMIDITYIN%</span>
     <sup class="units">%</sup>
   </p>
 </body>
@@ -93,10 +95,10 @@ setInterval(function ( ) {
   var xhttp = new XMLHttpRequest();
   xhttp.onreadystatechange = function() {
     if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("temperature").innerHTML = this.responseText;
+      document.getElementById("temperaturein").innerHTML = this.responseText;
     }
   };
-  xhttp.open("GET", "/temperature", true);
+  xhttp.open("GET", "/temperature-in", true);
   xhttp.send();
 }, 10000 ) ;
 
@@ -104,10 +106,10 @@ setInterval(function ( ) {
   var xhttp = new XMLHttpRequest();
   xhttp.onreadystatechange = function() {
     if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("humidity").innerHTML = this.responseText;
+      document.getElementById("humidityin").innerHTML = this.responseText;
     }
   };
-  xhttp.open("GET", "/humidity", true);
+  xhttp.open("GET", "/humidity-in", true);
   xhttp.send();
 }, 10000 ) ;
 
@@ -115,10 +117,10 @@ setInterval(function ( ) {
   var xhttp = new XMLHttpRequest();
   xhttp.onreadystatechange = function() {
     if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("temperatureds").innerHTML = this.responseText;
+      document.getElementById("temperatureout").innerHTML = this.responseText;
     }
   };
-  xhttp.open("GET", "/temperatureds", true);
+  xhttp.open("GET", "/temperature-out", true);
   xhttp.send();
 }, 10000 ) ;
 
@@ -128,11 +130,11 @@ setInterval(function ( ) {
 // Replaces placeholder with sensor values
 String processor(const String &var) {
   //Serial.println(var);
-  if (var == "TEMPERATURE") {
+  if (var == "TEMPERATUREIN") {
     return String(t);
-  } else if (var == "HUMIDITY") {
+  } else if (var == "HUMIDITYIN") {
     return String(h);
-  } else if (var == "TEMPERATUREDS") {
+  } else if (var == "TEMPERATUREOUT") {
     return String(t_ds);
   }
   return String();
@@ -156,39 +158,23 @@ void setup() {
     request->send_P(200, "text/html", index_html, processor);
   });
 
-  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/temperature-in", HTTP_GET, [](AsyncWebServerRequest *request) {
     String temperatureString = String(t);
     request->send(200, "text/plain", temperatureString);
   });
 
-  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/humidity-in", HTTP_GET, [](AsyncWebServerRequest *request) {
     String humidityString = String(h);
     request->send(200, "text/plain", humidityString);
   });
 
-  server.on("/temperatureds", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/temperature-out", HTTP_GET, [](AsyncWebServerRequest *request) {
     String temperatureDsString = String(t_ds);
     request->send(200, "text/plain", temperatureDsString);
   });
 
-  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-    String powerType;
-    if (power == DS18_EXTERNAL) powerType = "DS18_EXTERNAL";
-    else if (power == DS18_PARASITE) powerType = "DS18_PARASITE";
-
-    String json = "{";
-    json += "\"total_read\":" + String(counter.total) + ",";
-    json += "\"ok_DHT\":" + String(counter.ok) + ",";
-    json += "\"crc_error_DHT\":" + String(counter.crc_error) + ",";
-    json += "\"time_out_DHT\":" + String(counter.time_out) + ",";
-    json += "\"unknown_DHT\":" + String(counter.unknown) + ",";
-    json += "\"address_DS18B20\":" + String(addr_DS) + ",";
-    json += "\"resolution_DS18B20\":" + String(res_DS) + ",";
-    json += "\"power_DS18B20\":\"" + powerType + "\",";
-    json += "\"error_read_DS18B20\":" + String(counter.err_read_ds) + ",";
-    json += "\"read_time\":" + String(counter.read_time);
-    json += "}";
-    request->send(200, "text/plain", json);
+  server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", createJson());
   });
 
   addr_DS = ds.readAddress();
@@ -285,4 +271,32 @@ void loop() {
     uint32_t stop = micros();
     counter.read_time = stop - start;
   }
+}
+
+String createJson() {
+  String powerType;
+  if (power == DS18_EXTERNAL) powerType = "DS18_EXTERNAL";
+  else if (power == DS18_PARASITE) powerType = "DS18_PARASITE";
+
+  String temperatureIn = String(t);
+  String humidityIn = String(h);
+  String temperatureOut = String(t_ds);
+
+  String json = "{";
+  json += "\"temperatureIn\":" + temperatureIn + ",";
+  json += "\"temperatureOut\":" + temperatureOut + ",";
+  json += "\"humidityIn\":" + humidityIn + ",";
+  json += "\"total_read\":" + String(counter.total) + ",";
+  json += "\"ok_DHT\":" + String(counter.ok) + ",";
+  json += "\"crc_error_DHT\":" + String(counter.crc_error) + ",";
+  json += "\"time_out_DHT\":" + String(counter.time_out) + ",";
+  json += "\"unknown_DHT\":" + String(counter.unknown) + ",";
+  json += "\"address_DS18B20\":" + String(addr_DS) + ",";
+  json += "\"resolution_DS18B20\":" + String(res_DS) + ",";
+  json += "\"power_DS18B20\":\"" + powerType + "\",";
+  json += "\"error_read_DS18B20\":" + String(counter.err_read_ds) + ",";
+  json += "\"read_time\":" + String(counter.read_time);
+  json += "}";
+
+  return json;
 }
