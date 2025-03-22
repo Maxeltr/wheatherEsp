@@ -266,7 +266,10 @@ void loop() {
       Serial.print("DS18B20 temperature: ");
       Serial.println(t_ds);
     }
-    if (!ds.requestTemp()) Serial.println("request error ds18b20");
+    if (!ds.requestTemp()) {
+      Serial.println("request error ds18b20");
+      counter.err_read_ds++;
+    }
 
     uint32_t stop = micros();
     counter.read_time = stop - start;
