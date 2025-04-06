@@ -16,15 +16,16 @@
 DHTStable DHT;
 GyverDS18Single ds(DSPIN);
 
+uint64_t addr_DS;
+uint8_t res_DS;
+uint8_t power;
+
 // current temperature & humidity, updated in loop()
 float t = 0.0;
 float h = 0.0;
 float t_ds = 0.0;
 
 // current status, updated in loop()
-uint64_t addr_DS;
-uint8_t res_DS;
-uint8_t power;
 struct
 {
   uint32_t total;
@@ -46,6 +47,7 @@ unsigned long previousMillis = 0;  // will store the last time when the readings
 const long interval = 10000;
 
 String createJson();
+String floatToString(float number);
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -95,54 +97,50 @@ setInterval(function ( ) {
   var xhttp = new XMLHttpRequest();
   xhttp.onreadystatechange = function() {
     if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("temperaturein").innerHTML = this.responseText;
+      try {
+        const jsonObject = JSON.parse(this.responseText);
+        document.getElementById("temperaturein").innerHTML = jsonObject.temperatureIn;
+        document.getElementById("humidityin").innerHTML = jsonObject.humidityIn;
+        document.getElementById("temperatureout").innerHTML = jsonObject.temperatureOut;
+      } catch (error) {
+        console.error("Error parsing JSON:", error);
+      }
     }
   };
-  xhttp.open("GET", "/temperature-in", true);
+  xhttp.open("GET", "/readings", true);
   xhttp.send();
 }, 10000 ) ;
-
-setInterval(function ( ) {
-  var xhttp = new XMLHttpRequest();
-  xhttp.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("humidityin").innerHTML = this.responseText;
-    }
-  };
-  xhttp.open("GET", "/humidity-in", true);
-  xhttp.send();
-}, 10000 ) ;
-
-setInterval(function ( ) {
-  var xhttp = new XMLHttpRequest();
-  xhttp.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      document.getElementById("temperatureout").innerHTML = this.responseText;
-    }
-  };
-  xhttp.open("GET", "/temperature-out", true);
-  xhttp.send();
-}, 10000 ) ;
-
 </script>
 </html>)rawliteral";
 
 // Replaces placeholder with sensor values
 String processor(const String &var) {
-  //Serial.println(var);
   if (var == "TEMPERATUREIN") {
-    return String(t);
+    return floatToString(t);
   } else if (var == "HUMIDITYIN") {
-    return String(h);
+    return floatToString(h);
   } else if (var == "TEMPERATUREOUT") {
-    return String(t_ds);
+    return floatToString(t_ds);
   }
   return String();
 }
 
+String floatToString(float number) {
+  String str = String(number, 2);
+
+  while (str.endsWith("0")) {
+    str.remove(str.length() - 1);
+  }
+
+  if (str.endsWith(".")) {
+    str.remove(str.length() - 1);
+  }
+  
+  return str;
+}
+
 void setup() {
   Serial.begin(115200);  // Serial port for debugging purposes
-
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
   Serial.println("Connecting to WiFi");
@@ -152,25 +150,21 @@ void setup() {
   }
 
   Serial.println(WiFi.localIP());  // Print ESP8266 Local IP Address
-
   // Route for root / web page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send_P(200, "text/html", index_html, processor);
   });
 
   server.on("/temperature-in", HTTP_GET, [](AsyncWebServerRequest *request) {
-    String temperatureString = String(t);
-    request->send(200, "text/plain", temperatureString);
+    request->send(200, "text/plain", floatToString(t));
   });
 
   server.on("/humidity-in", HTTP_GET, [](AsyncWebServerRequest *request) {
-    String humidityString = String(h);
-    request->send(200, "text/plain", humidityString);
+    request->send(200, "text/plain", floatToString(h));
   });
 
   server.on("/temperature-out", HTTP_GET, [](AsyncWebServerRequest *request) {
-    String temperatureDsString = String(t_ds);
-    request->send(200, "text/plain", temperatureDsString);
+    request->send(200, "text/plain", floatToString(t_ds));
   });
 
   server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -281,14 +275,10 @@ String createJson() {
   if (power == DS18_EXTERNAL) powerType = "DS18_EXTERNAL";
   else if (power == DS18_PARASITE) powerType = "DS18_PARASITE";
 
-  String temperatureIn = String(t);
-  String humidityIn = String(h);
-  String temperatureOut = String(t_ds);
-
   String json = "{";
-  json += "\"temperatureIn\":" + temperatureIn + ",";
-  json += "\"temperatureOut\":" + temperatureOut + ",";
-  json += "\"humidityIn\":" + humidityIn + ",";
+  json += "\"temperatureIn\":" + floatToString(t) + ",";
+  json += "\"temperatureOut\":" + floatToString(t_ds) + ",";
+  json += "\"humidityIn\":" + floatToString(h) + ",";
   json += "\"total_read\":" + String(counter.total) + ",";
   json += "\"ok_DHT\":" + String(counter.ok) + ",";
   json += "\"crc_error_DHT\":" + String(counter.crc_error) + ",";
