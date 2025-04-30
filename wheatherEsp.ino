@@ -6,24 +6,28 @@
 #include <Adafruit_Sensor.h>
 #include <GyverDS18.h>
 #include "DHTStable.h"
+#include <Adafruit_BMP085.h>
 
 // Replace with your network credentials
 #include "secrets.h"
 
-#define DHTPIN 5
+#define DHTPIN 12
 #define DSPIN 2
 
 DHTStable DHT;
 GyverDS18Single ds(DSPIN);
 
+Adafruit_BMP085 bmp;
+
 uint64_t addr_DS;
 uint8_t res_DS;
 uint8_t power;
 
-// current temperature & humidity, updated in loop()
+// current temperature, humidity, pressure, updated in loop()
 float t = 0.0;
 float h = 0.0;
 float t_ds = 0.0;
+float p = 0.0;
 
 // current status, updated in loop()
 struct
@@ -34,7 +38,7 @@ struct
   uint32_t time_out;
   uint32_t read_time;
   uint32_t err_read_ds;
-  uint32_t ack_h;  //reserve
+  uint32_t err_read_bmp; 
   uint32_t unknown;
 } counter = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
@@ -74,6 +78,12 @@ const char index_html[] PROGMEM = R"rawliteral(
 <body>
   <h2>Weather station</h2>
   <p>
+    <i class="fas fa-tachometer-alt" style="color:#00add6;"></i> 
+    <span class="dht-labels"></span>
+    <span id="pressure">%PRESSURE%</span>
+    <sup class="units">mmHg</sup>
+  </p>
+  <p>
     <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
     <span class="dht-labels">In</span> 
     <span id="temperaturein">%TEMPERATUREIN%</span>
@@ -102,6 +112,7 @@ setInterval(function ( ) {
         document.getElementById("temperaturein").innerHTML = jsonObject.temperatureIn;
         document.getElementById("humidityin").innerHTML = jsonObject.humidityIn;
         document.getElementById("temperatureout").innerHTML = jsonObject.temperatureOut;
+        document.getElementById("pressure").innerHTML = jsonObject.pressure;
       } catch (error) {
         console.error("Error parsing JSON:", error);
       }
@@ -121,6 +132,8 @@ String processor(const String &var) {
     return floatToString(h);
   } else if (var == "TEMPERATUREOUT") {
     return floatToString(t_ds);
+  } else if (var == "PRESSURE") {
+    return floatToString(p);
   }
   return String();
 }
@@ -135,7 +148,7 @@ String floatToString(float number) {
   if (str.endsWith(".")) {
     str.remove(str.length() - 1);
   }
-  
+
   return str;
 }
 
@@ -167,6 +180,10 @@ void setup() {
     request->send(200, "text/plain", floatToString(t_ds));
   });
 
+  server.on("/pressure", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", floatToString(p));
+  });
+
   server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/plain", createJson());
   });
@@ -195,6 +212,10 @@ void setup() {
 
   ds.requestTemp();
 
+  if (!bmp.begin()) {
+    Serial.println("Could not find a valid BMP180 sensor, check wiring!");
+  }
+
   server.begin();
 }
 
@@ -204,6 +225,18 @@ void loop() {
     previousMillis = currentMillis;
 
     uint32_t start = micros();
+
+    float newP = bmp.readPressure();
+    if (isnan(newP)) {
+      Serial.println("Failed to read pressure from BMP180 sensor!");
+      counter.err_read_bmp++;
+    } else {
+      p = newP * 0.00750063755419211;
+      Serial.print("pressure: ");
+      Serial.println(p);
+    }
+    
+
     int chk = DHT.read22(DHTPIN);
 
     counter.total++;
@@ -279,6 +312,7 @@ String createJson() {
   json += "\"temperatureIn\":" + floatToString(t) + ",";
   json += "\"temperatureOut\":" + floatToString(t_ds) + ",";
   json += "\"humidityIn\":" + floatToString(h) + ",";
+  json += "\"pressure\":" + floatToString(p) + ",";
   json += "\"total_read\":" + String(counter.total) + ",";
   json += "\"ok_DHT\":" + String(counter.ok) + ",";
   json += "\"crc_error_DHT\":" + String(counter.crc_error) + ",";
@@ -288,6 +322,7 @@ String createJson() {
   json += "\"resolution_DS18B20\":" + String(res_DS) + ",";
   json += "\"power_DS18B20\":\"" + powerType + "\",";
   json += "\"error_read_DS18B20\":" + String(counter.err_read_ds) + ",";
+  json += "\"error_read_BMP180\":" + String(counter.err_read_bmp) + ",";
   json += "\"read_time\":" + String(counter.read_time);
   json += "}";
 
