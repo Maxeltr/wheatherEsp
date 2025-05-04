@@ -299,7 +299,7 @@ void loop() {
     }
 
     uint32_t stop = micros();
-    counter.read_time = stop - start;
+    counter.read_time = (stop - start) / 1000;
   }
 }
 
@@ -317,7 +317,7 @@ String createJson() {
   json += "\"ok_DHT\":" + String(counter.ok) + ",";
   json += "\"crc_error_DHT\":" + String(counter.crc_error) + ",";
   json += "\"time_out_DHT\":" + String(counter.time_out) + ",";
-  json += "\"unknown_DHT\":" + String(counter.unknown) + ",";
+  json += "\"unknown_error_DHT\":" + String(counter.unknown) + ",";
   json += "\"address_DS18B20\":" + String(addr_DS) + ",";
   json += "\"resolution_DS18B20\":" + String(res_DS) + ",";
   json += "\"power_DS18B20\":\"" + powerType + "\",";
